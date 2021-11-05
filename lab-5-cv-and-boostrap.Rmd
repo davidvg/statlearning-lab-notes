@@ -1,0 +1,204 @@
+---
+title: "Lab 5 - Cross-Validation and the Bootstrap"
+subtitle: "An Introduction to Statistical Learning"
+#author: "David Vázquez García"
+#date: "28/10/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+We will be using the `Auto` dataset.
+```{r}
+library(ISLR)
+attach(Auto)
+summary(Auto)
+```
+Let's plot the data:
+```{r fig.height=6}
+pairs(Auto, cex=.25)
+```
+
+First of all, we will set the seed to ensure reproducibility:
+```{r}
+set.seed(1)
+```
+
+
+# 1. The Validation Set approach
+In the previous examples we split the data in two subsets, a *training set* and a *test set*, and the split was done by hand, at a given index of the data.
+
+Random splits can be done using `sample()`; this function "samples" of a specified size from a set. Instead of a source set, an integet number can be passed, taking samples from $1:n$.
+
+We take half the data as training set and the remaining half for testing:
+```{r}
+dim(Auto)
+N = dim(Auto)[1]
+train = sample(N, N/2, replace = FALSE)
+```
+We have created a vector with $392/2 = 196$ values, from $1$ to $N= \textrm{dim(Auto)}[1]$ that will be used as indices for the training samples.
+
+## Fitting the model
+
+We fit a simple Linear Model using `horsepower` as predictor for `mpg`. We will choose between 3 possible models, with polynomial degrees up to 3 for `horsepower`.
+```{r}
+cv.errors = rep(NA, 5)
+for (d in 1:5) {
+  lm.fit = lm(mpg ~ poly(horsepower, d), data = Auto, subset = train)
+  lm.pred = predict(lm.fit, newdata = Auto[-train])
+  cv.errors[d] = mean((lm.pred - mpg)[-train]^2)
+}
+cv.errors
+```
+```{r, fig.dim=c(5, 3),  fig.align='center'}
+plot(cv.errors, type='b', xlab = 'Polynomial degree')
+```
+Based on this results we would choose the model with the smallest mean LSE error, in this case the model with the second-order polynomial.
+
+# 2. Leave-One-Out Cross-Validation (*LOOCV*)
+
+*LOOCV* can be done using the `boot` library:
+```{r}
+library(boot)
+```
+This library includes methods for computing Cross-Validation for any generalized linear model using `glm()` and `cv.glm()`. `glm()` was used before to perform logistic regression using `family="binomial"`, but if no `type` is passed then it will perform linear regression, like `lm()`, with the advantage that we can use `cv.glm()` for cross-validation.
+
+We will fit a simple model to show the syntax for `cv.glm()`:
+```{r}
+glm.fit = glm(mpg ~ horsepower, data = Auto)
+cv.err = cv.glm(data = Auto, glmfit = glm.fit, K = 10)
+```
+We obtain an object with the following components:
+```{r}
+names(cv.err)
+```
+`delta` contains the CV results:
+```{r}
+cv.err$delta
+```
+The first element of `delta` is the standard CV estimate, while the second is a bias-compensated estimation. These two values will be different, specially when using LOOCV, and will be much more similar when doing K-Fold CV.
+
+We will now perform *LOOCV* to find the best polynomial degree for the fit:
+```{r}
+cv.errors.loo = rep(NA, 5)
+for (d in 1:5) {
+  glm.fit = glm(mpg ~ poly(horsepower, d), data = Auto)
+  cv.errors.loo[d] = cv.glm(Auto, glm.fit)$delta[1]
+}
+cv.errors.loo
+```
+```{r, fig.dim=c(5, 3),  fig.align='center'}
+plot(cv.errors.loo, type='b', xlab = 'Polynomial degree', ylab='Mean LSE')
+```
+The results show the mean LSE for each degree.
+
+
+# 3. K-Fold Cross-Validation
+
+K-Fold CV can be done using `cv.glm()` with another parameter $K$, the number of folds in which the data will be split. $K$ defaults to 10, meaning that 9 folds will be used to train the data and the remaining one will be used to make predictions. This step will be done $K$ times, using $K-1$ of the $K$ folds to train the model and the remaining one to test the performance.
+```{r}
+cv.errors.kfold = rep(0, 5)
+for (d in 1:5) {
+  glm.fit = glm(mpg ~ poly(horsepower, d), data = Auto)
+  cv.errors.kfold[d] = cv.glm(Auto, glm.fit, K = 10)$delta[1]
+}
+cv.errors.kfold
+```
+```{r, fig.dim=c(5, 3),  fig.align='center'}
+plot(cv.errors.kfold, type='b', xlab = 'Polynomial degree', ylab='Mean LSE')
+```
+
+
+# 4. The Bootstrap
+
+The bootstrap is a widely applicable and powerful statistical method used to quantify the *uncertainty* of a given estimator or statistical learning method.
+
+To perform a bootstrap analysis two steps are necessary:
+
+a. Create a function that computes the statistic of interest.
+b. Use the `boot()` method, from the `boot` library, to perform the bootstrap by repeatedly sampling observations from the data.
+
+## Estimating the accuracy of a statistic
+
+We will use the `Portfolio` dataset, included in the `ISLR` library. 
+```{r}
+summary(Portfolio)
+dim(Portfolio)
+```
+We wish to invest a fixed sum of money in two financial assets that yield returns $X$ and $Y$. We will invest a fraction $\alpha$ of the money in $X$ and the remaining, $1 - \alpha$, in $Y$. We wish to choose $\alpha$ that minimizes the risk (variance) of the investment, i.e. that minimizes $\textrm{Var}(\alpha X + (1- \alpha) Y)$, being the result:
+
+$$
+\alpha = \frac {\sigma_{Y}^2 - \sigma_{XY}} {\sigma_{X}^2 + \sigma_{Y}^2 - 2 \sigma_{XY}}
+$$
+
+### Create the function that computes the statistic $\alpha$
+We are going to sample observations from the data, obtaining a vector of indices to subset the data. So, we will pass the function both the data and the vector of indices so slice the data.
+
+```{r}
+alpha.fn = function(data, index) {
+  X = data$X[index]
+  Y = data$Y[index]
+  res = (var(Y) - cov(X, Y)) / (var(X) + var(Y) - 2 * cov(X, Y))
+  return(res)
+}
+```
+Each time we call `alpha.fn()` with the dataset and a vector of indices it will return the value of $\alpha$ that minimizes the variance for that subset.
+```{r}
+alpha.fn(Portfolio, 1:100)
+```
+To generate the indices we will use the `sample()` method to randomly select $N$ observations from the range $1:N$, **with replacement**, where $N$ is the total number of observations in the dataset.
+```{r}
+set.seed(17)
+ix = sample(100:100, replace = TRUE)
+alpha.fn(Portfolio, ix)
+```
+
+### Perform the bootstrap
+To implement the bootstrap analysis we repeatedly call `alpha.fn()`, using different samples from the dataset.
+
+This can be automatically done using `boot()`; we can specify the number of iterations with the parameter `R`:
+```{r}
+boot =boot(Portfolio, alpha.fn, R = 1000)
+boot
+```
+The method returns an estimated value for $\hat \alpha = 0.5758$ with a bootstrap estimate for its standard error, $SE(\hat \alpha) = 0.0881$.
+
+We can plot the output:
+```{r}
+plot(boot)
+```
+We can access the results:
+```{r}
+alpha = boot$t0
+se = sd(boot$t)
+cat(sprintf("alpha = %0.3f, SE = %0.4f", alpha, se))
+```
+
+
+
+## Estimating the accuracy of a Linear Regression Model
+
+The bootstrap can be used to asses the variability of the coefficient estimates and predictions from a statistical learning method.
+
+We will use the `Auto` dataset.
+
+We first create a function to compute the values of interest, in this case the intercept and slope of the Linear Regression model:
+```{r}
+lr.fn = function(data, index) {
+  model = lm(mpg ~ horsepower, data = Auto, subset = index)
+  coefs = coef(model)
+  return(coefs)
+}
+```
+This function will return the intercept and slope for a Linear Regression model fitted with the subset defined by `index`:
+```{r}
+lr.fn(Auto, 1:100)
+```
+Now we perform the bootstrap analysis:
+```{r}
+boot = boot(Auto, lr.fn, R = 1000)
+boot
+```
+The output shows the bootstrap estimates $\hat \beta_0 = 39.936$ and $\hat \beta_1 = -0.158$ with estimated standard errors $SE(\hat \beta_0) = 0.8512$ and $SE(\hat \beta_1) = 0.0072$.

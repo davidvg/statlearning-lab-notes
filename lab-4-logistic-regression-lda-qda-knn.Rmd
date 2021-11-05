@@ -1,0 +1,280 @@
+---
+title: "Lab 4 - Logistic Regression, LDA, QDA and KNN"
+subtitle: "An Introduction to Statistical Learning"
+output:
+  pdf_document: default
+---
+
+We are going to work with the `Smarket` dataset:
+
+```{r}
+library(ISLR)
+attach(Smarket)
+summary(Smarket)
+```
+Let's plot the data:
+```{r fig.height=6}
+pairs(Smarket, cex=.25)
+```
+We will try to predict the value for `Direction`, that takes two values:
+```{r}
+contrasts(Direction)
+```
+
+# 1. Logistic Regression
+
+## Creating train and a test sets
+
+All samples whose `Year` value is less than $2005$ will be used to train the model:
+```{r}
+train = (Year<2005)
+Smarket.train = Smarket[train,]
+```
+We generate the test set in the same manner, and the test target vector:
+```{r}
+Smarket.test = Smarket[!train,]
+Direction.test = Direction[!train]
+```
+
+## Fitting the model
+
+Let's fit a *generalized linear model* (`glm`) for logistic regression, using the training set.
+
+To specify the training subset we could do:
+
+- Using `data=Smarket.train`
+- Using `data=Smarket, subset=train`
+
+```{r}
+glm.fit = glm(Direction ~ Lag1+Lag2+Lag3+Lag4+Lag5+Volume, data=Smarket,
+              subset=train, family='binomial')
+```
+The parameter `family='binomial'` tells `R` to perform a logistic regression instead of other type of linear model.
+```{r}
+summary(glm.fit)
+```
+From the summary we find out that the predictor with the smallest p-value is `Lag1`, but it's quite large, $0.145$, so its significance is relative.
+
+We can plot the p-values from the `summary`:
+```{r}
+summary(glm.fit)$coef[,4]
+```
+From now on we will use a model with only two predictors: `Lag1` and `Lag2`:
+```{r}
+glm.fit = glm(Direction ~ Lag1+Lag2, data=Smarket, subset=train, family='binomial')
+summary(glm.fit)
+```
+## Predicting `Direction`
+
+In this case we will make predictions using the same samples that were used to fit the model. I we were to use a test subset we would pass the parameter `newdata=test_data`, where `test_data` is a subset of the data that has not been used to train the model.
+
+We will use the test set to make predictions; to specify the test set we pass the parameter `newdata=Smarket.test`, where `Smarket.test` is the previously generated subset of the data that has not been used to train the model.
+
+We are doing a logistic regression, so we need to get predictions in the form of probabilities of belonging to a class, or $p(Y=1 \mid X)$. To do so, we need to specify the parameter `type='response'`:
+```{r}
+glm.probs = predict(glm.fit, newdata=Smarket.test, type='response')
+glm.probs[1:8]
+```
+Predicted probabilities greater than $1$ assign the sample to the class `Up`, as seen with the `contrasts` function.
+
+At this point we have predictions in the form of probabilities, but we need to have predictions in the form `Up` or `Down`.
+```{r}
+glm.preds = rep('Down', dim(Smarket.test)[1])
+glm.preds[glm.probs > 0.5] = 'Up'
+glm.preds[1:8]
+```
+
+## Checking the model performance
+
+We produce a confussion matrix:
+```{r}
+table(glm.preds, Direction.test)
+```
+To compute the ratio of correctly predicted values:
+```{r}
+(35+106)/dim(Smarket.test)[1]
+```
+or:
+```{r}
+mean(glm.preds == Direction.test)
+```
+We find that the model gave the correct answer for the $56\%$ fo the test data
+
+## Predicting values for particular predictor values
+
+If we want to predict the output for a set of known predictor inputs:
+```{r}
+glm.preds.2 = predict(glm.fit, type='response',
+                      newdata = data.frame(Lag1=c(1.2, 1.5), Lag2=c(1.1, -0.8)))
+```
+Here we give two new "samples", with `(Lag1, Lag2)` equal to $(1.2, 1.1)$ and $(1.5, -0.8)$.
+
+The predicted outputs for each of the two samples are:
+```{r}
+glm.preds.2
+```
+
+# 2. Linear Discriminant Analysis (LDA)
+
+We need to load the `MASS` library to use `LDA` and `QDA`.
+```{r}
+library(MASS)
+```
+
+## Fitting the model
+
+We will use the same train and test sets from the Logistic Regression model.
+```{r}
+lda.fit = lda(Direction ~ Lag1+Lag2, data = Smarket, subset = train)
+lda.fit
+```
+The coefficients of the linear discriminants are the values that provide the linear combination of `Lag1` and `Lag2` used to form the LDA decision rule (the multipliers of the elements $X=x$ in equation $4.19$ of the book):
+$$
+-0.642 \times \textrm{Lag1} - 0.513 \times \textrm{Lag2}
+$$
+When this value is large then the LDA classifier will predict a market increase.
+
+We can plot the linear discriminants, obtained by computing the previous linear combination for each of the training samples:
+```{r}
+plot(lda.fit)
+```
+
+We also get two **group means**: the average of each predictor within each class, which are used by `LDA` as estimates of $\mu_k$ in equation $4.19$ of the book.
+
+## Making predictions
+```{r}
+lda.pred = predict(lda.fit, newdata = Smarket.test)
+```
+The obtained predictions have the following components:
+```{r}
+names(lda.pred)
+```
+
+`class` contains the actual class labels for each prediction:
+```{r}
+lda.pred$class[1:6]
+```
+`posterior` is a matrix whose *k*th column contains the posterior probability that the corresponding observation belongs to the *k*th class:
+```{r}
+lda.pred$posterior[1:6,]
+```
+`x` contains the scores of test cases on the discriminant variables:
+```{r}
+lda.pred$x[1:6,]
+```
+
+## Model performance
+We need to compare the predicted `class` with the correct class in the test target vector:
+```{r}
+table(lda.pred$class, Direction.test)
+```
+```{r}
+mean(lda.pred$class == Direction.test)
+```
+We have predicted the correct class for the $56\%$ of the test data, exactly the same result than with Logistic Regression. In fact, both confussion matrices are identical.
+
+## Using a different probability threshold
+`lda` applies a probability threshold of $0.5$ when making predictions. If we want to use a different value:
+```{r}
+sum(lda.pred$posterior[,1] >= 0.5)
+sum(lda.pred$posterior[,1] >= 0.45)
+```
+
+
+## A note on the posterior probabilities
+The posterior probability corresponds to the probability that the market will *decrease*:
+```{r}
+lda.pred$posterior[1:15]
+```
+```{r}
+lda.pred$class[1:15]
+```
+When the posterior is **greater than $0.5$** the predicted class is the first class, the one corresponding to $0$, i.e. `Down`.
+```{r}
+contrasts(Direction.test)
+```
+
+
+
+# 3. Quadratic Discriminant Analysis (QDA)
+The process is very similar than the one for LDA:
+```{r}
+qda.fit = qda(Direction ~ Lag1+Lag2, data = Smarket, subset = train)
+qda.fit
+```
+This time the model doesn't contain the coefficiens of the linear discriminants, because QDA involve quadratic functions of the predictors.
+
+## Making predictions
+```{r}
+qda.pred = predict(qda.fit, newdata = Smarket.test)
+```
+
+## Model performance
+```{r}
+table(qda.pred$class, Direction.test)
+```
+```{r}
+mean(qda.pred$class == Direction.test)
+```
+With QDA we get $60\%$ of the samples correctly labeled.
+
+
+# 4. K-Nearest Neighbors (KNN)
+
+K-Nearest Neighbors is done using the `knn` function from the `class` library.
+
+```{r}
+library(class)
+```
+
+`knn` has a slightly different format for the input data. It takes two matrices containing the train and test data, so we need to create them using `cbind`:
+```{r}
+x.train = cbind(Lag1, Lag2)[train,]
+x.test = cbind(Lag1, Lag2)[!train,]
+y.train = Direction[train]
+```
+We need to be sure that `R` will be consistently making groups through the tests, when some observations are tied as nearest neighbors.
+```{r}
+set.seed(1)
+```
+We will try to predict outputs based only on the nearest observation ($\textrm{k} = 1$)
+
+
+This method has not a fit-predict cycle. Predictions are directly made from the training data.
+```{r}
+knn.pred = knn(train = x.train, test = x.test, cl = y.train, k = 1)
+```
+`cl` is the factor of true classifications of the training set (the target), and `k` is the number of clusters to create.
+
+We check the model performance:
+```{r}
+table(knn.pred, Direction.test)
+```
+```{r}
+mean(knn.pred == Direction.test)
+```
+In this case, $50\%$ of the samples are correctly labeled.
+
+We now try with $\textrm{k} = 3$:
+```{r}
+knn.pred = knn(train = x.train, test = x.test, cl = y.train, k = 3)
+table(knn.pred, Direction.test)
+```
+```{r}
+mean(knn.pred == Direction.test)
+```
+Now $53\%$ of the observations are correctly labeled.
+
+## A note on predictor scales
+
+$\textrm{KNN}$ works with *distances* between observations, and therefore the scale of the variables influences the result; variables that are on a large scale will have a much larger effect on the distance between observations.
+
+In the previous example, both `Lag1` and `Lag2` have the same meaning and scale, so it's not necessary to rescale them, but when working with variables that have different units or ranges we must **standardize** them using `scale`:
+```{r}
+x1 = rnorm(100, 2, 5)
+summary(x1)
+```
+```{r}
+x1.standardized = scale(x1)
+summary(c(x1.standardized)) # c() only converts the column to a vector for visualization
+```

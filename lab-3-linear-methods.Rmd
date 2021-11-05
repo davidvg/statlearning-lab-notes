@@ -1,0 +1,126 @@
+---
+title: "Lab 3 - Linear Regression"
+subtitle: "An Introduction to Statistical Learning"
+output: pdf_document
+---
+
+```{r}
+library(MASS)
+library(ISLR)
+attach(Boston)
+```
+
+```{r}
+summary(Boston)
+```
+
+## 1. Simple Linear Regression
+
+### Fitting the model
+
+```{r}
+lm.fit = lm(medv ~ lstat, data = Boston)
+```
+
+Calling `summary` we can see information about the fitted model:
+
+- The minimum, maximum and quantile values for the residuals.
+- The estimated values for the coefficients, as well as their standard error, and the T-statistic and p-value for the significance test.
+- The residual standard error.
+- The value of multiple $R^2$ and adjusted $R^2$.
+- The value of the model F-statistic and its associated p-value. This statistic measures the relationship between the predictors and the response. When no relationship exists, the F-statistic is expected to be close to 1, whereas it would take values much greater than 1 when this relationship exists.
+
+```{r}
+summary(lm.fit)
+```
+The fitted linear model has the following components:
+```{r}
+names(lm.fit)
+```
+
+We can print a $95\%$ confidence interval for the coefficients using `confint` (the `level` argument defines the confidence level, defaults to $0.95$):
+```{r}
+confint(lm.fit)
+```
+
+### Predictions
+
+When `newdata` is not specified, predictions are done using the fitting (training) data.
+```{r}
+lm.pred = predict(lm.fit)
+```
+
+If we want to pass a list of samples for which we want to predict values:
+```{r}
+newdata = data.frame(lstat=c(2, 30))
+lm.pred2 = predict(lm.fit, newdata = newdata)
+lm.pred2
+```
+
+The `interval` argument for `predict` generates intervals for the predicted values. `confidence` returns the 95% *confidence* intervals for the prediction (only reducible error), while `prediction` returns *prediction* intervals considering both reducible and irreducible errors.
+```{r}
+predict(lm.fit, newdata = newdata, interval = 'confidence')
+
+```
+
+```{r}
+predict(lm.fit, newdata = newdata, interval = 'prediction')
+```
+
+### Composing Features
+
+Operations over the predictors can be done:
+
+```{r echo=T}
+lm.fit2 = lm(medv ~ log(lstat), data=Boston)
+summary(lm.fit2)
+```
+
+
+### Plotting the data
+
+```{r echo=T}
+par(mfrow=c(1,2))
+plot(lstat, medv, pch='+', cex=.75, title('Linear model'))
+abline(lm.fit, col='red', lwd=1.5)
+
+plot(lstat, medv, pch='+', cex=.75, title('Logarithmic model'))
+lines(sort(lstat), fitted(lm.fit2)[order(lstat)], col='red')
+```
+
+The `lm` method comes with a pre-configured 2x2 plot:
+```{r}
+par(mfrow=c(2,2))
+plot(lm.fit, cex=.25)
+```
+
+- The first plot shows Residuals vs Fitted values. This can give an idea of the deviation from linearity by observing the residuals for the predicted values. It's equivalent to `plot(predict(lm.fit), residuals(lm.fit))`
+- The second plot is a Normal Q-Q plot, that shows the difference between the model's residuals and a normal distribution, comparing the theoretical quantiles (the quantiles from a standard normal distribution).
+- The third plot is obtained by standardizing the residuals from plot number one. Samples with an standardized residual greater than 3 could be considered an outlier. It's equivalent to `plot(predict(lm.fit), rstudent(lm.fit))`
+- The fourth plot shows the residual vs the leverage of the sample points. It's equivalent to `plot(hatvalues(lm.fit), rstudent(lm.fit))`.
+
+## 2. Multiple Linear Regression
+
+```{r}
+lm.mult = lm(medv ~ age + poly(rm, 3) + poly(lstat, 3) + sqrt(lstat) + sqrt(rm) + nox, data=Boston)
+summary(lm.mult)
+```
+
+## 3. Qualitative Predictors
+
+The Carseats dataset has both quantitative (numerical) and qualitative predictors:
+```{r}
+attach(Carseats)
+```
+Fitting a linear model automatically generates dummy variables for the qualitative predictors:
+```{r}
+lm.fit3 = lm(Sales ~ ., data=Carseats)
+summary(lm.fit3)
+```
+In this case, 3 qualitative predictors exist: `ShelveLoc`, `Urban` and `US`.
+
+The model creates one dummy variable for each pair of classes in a predictor. The encoding can be shown using `contrasts()`:
+```{r}
+contrasts(ShelveLoc)
+```
+For `ShelveLoc`, with 3 classes, 2 dummy variables are created: `ShelveLocGood`, encoded as `[1,0]` and `ShelveLocMedium`, encoded as `[0,1]`; the third class, corresponding to `Bad`, is the trivial encoding, `[0,0]`.
