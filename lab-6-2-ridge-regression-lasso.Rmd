@@ -1,0 +1,177 @@
+---
+title: "Lab 6.2 - Ridge Regression and the Lasso"
+subtitle: "An Introduction to Statistical Learning"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```
+TO-DO
+-----
+[ ] Search for info about `lambda.1se` in `cv.glmnet()`.
+
+--------------------------------------------------------------------------------
+```
+
+
+We will use the `Hitters` dataset.
+```{r}
+library(ISLR)
+sum(is.na(Hitters))
+```
+There are $59$ missing observations for `Salary` so we need to make some cleaning:
+```{r}
+Hitters = na.omit(Hitters)
+attach(Hitters)
+```
+Let's create a matrix with the observations and a targets vector:
+```{r}
+x = model.matrix(Salary~., data = Hitters)[, -1]
+y = Salary
+```
+
+
+Ridge Regression and the Lasso are performed using the `glmnet()` function in the `glmnet` library.
+```{r}
+library(glmnet)
+```
+
+# 1. Ridge Regression
+
+The regression method is selected with the parameter `alpha`; if `alpha=0` then `glmnet` performs Ridge Regression, and the Lasso if `alpha=1`.
+
+## Fitting the model
+
+We split the data in training and test subsets:
+```{r}
+set.seed(1)
+train = sample(1:nrow(x), nrow(x)/2)
+test = (-train)
+x.train = x[train,]
+x.test = x[test,]
+y.train = y[train]
+y.test = y[test]
+```
+A grid of **decreasing** values for $\lambda$ can be passed to the function to be used for fitting the model and selecting the best value for $\lambda$. Another way to supply values for $\lambda$ is to use the parameters `nlambda` and `lambda.min.ratio`. 
+
+Here we create a grid of 100 values for $\lambda$, from $10^{10}$ to $0.01$:
+```{r}
+lambdas = 10^seq(10, -2, length = 100)
+```
+Now we fit the model, specifying a value for the convergence threshold, `thres`:
+```{r}
+ridge.mod = glmnet::glmnet(x.train, y.train,
+                           alpha = 0, lambda = lambdas, thresh = 1e-12)
+plot(ridge.mod); grid()
+```
+By default, `glmnet` standardizes the variables; to avoid this, use `standardize=FALSE`.
+
+For each $\lambda$ the model has an associated vector of variable coefficients, conforming a $(num\_vars \times num\_lambdas)$ matrix.
+```{r}
+dim(coef(ridge.mod))
+```
+To get the list of $\lambda$ we use `ridge.mod$lambda`:
+```{r}
+ridge.mod$lambda[1:10]
+```
+To access the coefficients for a given $\lambda$ position:
+```{r}
+coef(ridge.mod)[,50]
+```
+We can compute the $\textrm{L}2$ of the coefficients associated to $\lambda[50]=11497.57$
+```{r}
+sqrt(sum(coef(ridge.mod)[-1, 50]^2))
+```
+
+## Making predictions
+
+To make predictions with a given value of $\lambda = 50$:
+```{r}
+ridge.pred = predict(ridge.mod, newx = x.test, s = 50)
+ridge.pred[1:20,]
+```
+Let's compute the test error:
+```{r}
+mean((ridge.pred - y.test)^2)
+```
+
+## Using Cross-Validation to select $\lambda$
+
+The package `glmnet` includes `cv.glmnet()`, a version of the `glmnet()` function that can perform cross-validation. The resulting output of this function can be plotted:
+```{r}
+set.seed(1)
+cv.out.ridge = cv.glmnet(x.train, y.train, alpha = 0)
+plot(cv.out.ridge)
+```
+The vertical lines in the plot mark the values for `lambda.min` and `lambda.1se`, in this case in logarithmic scale.
+
+By default, a $10$-fold CV is performed
+
+To select the best $\lambda$:
+```{r}
+bestlam.ridge = cv.out.ridge$lambda.min
+cat(sprintf("Best lambda: %.2f [log = %.2f]", bestlam.ridge, log(bestlam.ridge)))
+```
+Now we can make predictions using the previously fitted model, `ridge.mod`, and the best value for $\lambda$ that we just obtained:
+```{r}
+ridge.pred = predict(ridge.mod, newx = x.test, s = bestlam.ridge)
+mean((ridge.pred - y.test)^2)
+```
+We obtain a smaller error than before.
+
+## Fitting the complete model
+
+We can now refit the model with all the data:
+```{r}
+out.ridge = glmnet(x, y, alpha = 0, lambda = lambdas) # lambda is optional
+pred.ridge = predict(out.ridge, s = bestlam.ridge, type='coefficients')
+pred.ridge[1:20,]
+```
+
+
+# 2. The Lasso
+
+Lasso regression is also performed with `glmnet()` and `alpha=1`:
+```{r}
+lasso.mod = glmnet(x.train, y.train, alpha=1, lambda=lambdas)
+plot(lasso.mod); grid()
+```
+
+## Fitting the model
+
+Let's fit a Lasso model using Cross-Validation:
+```{r}
+set.seed(1)
+cv.out.lasso = cv.glmnet(x.train, y.train, alpha = 1)
+plot(cv.out.lasso)
+```
+In this case we get a different value for the best $\lambda$:
+```{r}
+bestlam.lasso = cv.out.lasso$lambda.min
+cat(sprintf("Best lambda: %.2f [log = %.2f]", bestlam.lasso, log(bestlam.lasso)))
+```
+
+## Making predictions
+
+We use the obtained best $\lambda$ to make predictions:
+```{r}
+lasso.pred = predict(cv.out.lasso, newx = x.test, s = bestlam.lasso)
+mean((lasso.pred - y.test)^2)
+```
+
+## Fiting the complete model
+
+Now we can use the best $\lambda$ to fit a model with all the data:
+```{r}
+out.lasso = glmnet(x, y, alpha = 1, lambda = lambdas)
+pred.lasso = predict(out.lasso, type = 'coefficients', s = bestlam.lasso)
+```
+
+
+One advantage of the Lasso over Ridge Regression is that its coefficients are sparse:
+```{r}
+pred.lasso[1:20,]
+```

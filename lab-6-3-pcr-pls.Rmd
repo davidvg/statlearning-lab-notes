@@ -1,0 +1,111 @@
+---
+title: "Lab 6.3 - PCR and PLS Regression"
+subtitle: "An Introduction to Statistical Learning"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+We will use the `Hitters` dataset.
+```{r}
+pacman::p_load(ISLR, pls)
+
+Hitters = na.omit(Hitters)
+attach(Hitters)
+```
+Let's create a matrix with the observations and a targets vector:
+```{r}
+x = model.matrix(Salary~., data = Hitters)[, -1]
+y = Salary
+```
+Split the data in training and test sets:
+```{r}
+set.seed(1)
+train = sample(1:nrow(x), nrow(x)/2)
+test = (-train)
+```
+
+
+# 1. Principal Component Regression (PCR)
+
+## Fitting the model
+
+PCR is performed using the `pcr()` function from the `pls` library. Data can be introduced as a `data.frame`, in this case `Hitters`, or as `model.matrix`, `x` and `y`.
+```{r}
+set.seed(1)
+#pcr.fit = pcr(Salary~., data = Hitters, subs = train, scale = TRUE, validation = 'CV')
+pcr.fit = pcr(y~x, subs = train, scale = TRUE, validation = 'CV')
+```
+Setting `scale=TRUE` standardizes the data, which is necessary if the variables are in different ranges, units, etc.
+
+Validation can be computed setting `validation="CV"` for cross-validation, which by default is a 10-fold for each possible *M*, number of principal components used. If `validation="LOO"`, *leave-one-out* cross-validation is performed.
+
+The results can be printed with `summary()`:
+```{r}
+summary(pcr.fit)
+```
+The VC *root mean squared error*, RMSEP, is shown in ascending order of *M*. MSE is just the square of RMSEP.
+
+The results of the CV can be plotted, giving the statistic to be plotted in `val.type`:
+```{r, fig.dim=c(6, 4),  fig.align='center'}
+validationplot(pcr.fit, val.type = 'MSEP', legendpos = 'top'); grid()
+```
+The plot shows that a model with 5 components has the lowest Cross-Validation error.
+
+`summary()` also prints the *percentage of variance explained* in the predictors and in the response for the different values of *M*.
+
+## Making prections
+
+We now use the 6-component model to check performance on the test set. We can pass the new data as as `data.frame`, or as `model.matrix` like before. The number of components is given in `ncomp`:
+```{r}
+#pcr.pred = predict(pcr.fit, newdata = Hitters, subset = test, ncopm = 6)
+pcr.pred = predict(pcr.fit, newdata = x, subset = test, ncomp = 6)
+
+cat(sprintf("Mean error for the 6-component model: %.2f",
+            mean((x[test,] - Salary[test])^2)))
+```
+
+## Fitting the complete model
+
+Finally we refit the model with all the data:
+```{r}
+pcr.fit = pcr(y~x, scale = TRUE, ncomp = 6)
+summary(pcr.fit)
+```
+
+
+# 2. Partial Least Squares Regression (PLSR)
+
+Partial Least Squares regression is a *supervised* alternative tp PCR, which identifies a new set of features, $Z_1, \dots, Z_M$ that are linear combinations of the original features and then fits a linear model via least squares using this $M$ new features, but making use of the response $Y$ to identify new features that not only approximate the old features well, but also are *related to the response*.
+
+## Fitting the model
+
+PSLR is performed using the `pslr()` method in the `pls` library, and its syntax is the same that of the `pcr()` method:
+```{r}
+set.seed(42)
+pls.fit = plsr(Salary~., data = Hitters, subset = train, scale = TRUE, validation = "CV")
+summary(pls.fit)
+```
+```{r, fig.dim=c(6, 4),  fig.align='center'}
+validationplot(pls.fit, val.type = 'MSEP'); grid()
+```
+
+## Making predictions
+
+The lowest CV error occurs for $M=1$ partial least square directions.
+
+Let's evaluate the test set MSE:
+```{r}
+pls.pred = predict(pls.fit, newdata = Hitters[test,], ncomp = 1)
+mean((pls.pred - Salary[test])^2)
+```
+
+## Fitting the complete model
+
+Let's refit the model with all the data and using `ncomp=2`:
+```{r}
+pls.fit = plsr(Salary~., data = Hitters, scale = TRUE, ncomp = 2)
+summary(pls.fit)
+```
+The variance explaned by the 2-components PLS model *in the target* `Salary`, $46.40\%$, is approximately the same as the obtained with the 6-component PCR model, $46.48\%$.
