@@ -100,11 +100,28 @@ plot(lm.fit, cex=.25)
 - The fourth plot shows the residual vs the leverage of the sample points. It's equivalent to `plot(hatvalues(lm.fit), rstudent(lm.fit))`.
 
 ## 2. Multiple Linear Regression
-
+Any kind of combination can be appliedo to features: `poly()`, `log()`, `sqrt()`...
 ```{r}
-lm.mult = lm(medv ~ age + poly(rm, 3) + poly(lstat, 3) + sqrt(lstat) + sqrt(rm) + nox, data=Boston)
+lm.mult = lm(medv ~ poly(rm, 2)+ sqrt(lstat) + sqrt(rm), data = Boston)
 summary(lm.mult)
 ```
+
+### Orthogonal and Non-Orthogonal Polynomials
+
+`poly()` has a `raw` parameter that controls if orthogonal polynomials are created. It defaults to `FALSE`, creating orthogonal polynomials:
+```{r}
+lm.poly = lm(wage ~ poly(age, 4, raw = FALSE), data = Wage)
+coef(summary(lm.poly))
+```
+`poly()` returns a matrix whose columns are a basis of *orthogonal polynomials*, so each columns is a linear combination of the variables `age`, `age^2`, `age^3` and `age^4`.
+
+If we set `raw=TRUE`:
+```{r}
+lm.poly = lm(wage ~ poly(age, 4, raw = TRUE), data = Wage)
+coef(summary(lm.poly))
+```
+Now `poly()` returns `age`, `age^2`, `age^3` and `age^4` directly.
+
 
 ## 3. Qualitative Predictors
 
