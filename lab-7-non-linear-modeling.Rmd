@@ -1,0 +1,100 @@
+---
+title: "Lab 7 - Non-Linear Modeling"
+subtitle: "An Introduction to Statistical Learning"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+We will be using the `Wage` dataset
+```{r}
+pacman::p_load(ISLR)
+attach(Wage)
+```
+
+# 1. Polynomial Regression and Step Functions
+
+## Polynomial Regression
+
+### Fitting the model
+Our goal is to produce two plots, one showing `wage` vs `age` and other showing `wage>250` vs `age`.
+
+We start by fitting a linear model with powers of `age`:
+```{r}
+poly.fit = lm(wage ~ poly(age, 4), data = Wage)
+summary(poly.fit)
+```
+
+### Making predictions
+
+We create a grid for `age` in which we will make predictions:
+```{r}
+agelims = range(age)
+age.grid = seq(from=agelims[1], to=agelims[2])
+```
+Now we make the predictions and compute standard errors:
+```{r}
+poly.pred = predict(poly.fit, newdata = list(age = age.grid), se.fit = TRUE)
+```
+We create a matrix containing the standard error intervals:
+```{r}
+se.bands = cbind(poly.pred$fit - 2*poly.pred$se.fit,
+                 poly.pred$fit + 2*poly.pred$se.fit)
+```
+We now produce the first plot, showing `wage` vs `age` with a confidence interval of $95\%$:
+```{r, fig.dim=c(4, 4),  fig.align='center'}
+plot(age, wage, xlim = agelims, cex=.5, col='darkgrey')
+lines(age.grid, poly.pred$fit, lwd = 1, col = 'blue')
+matlines(age.grid, se.bands, lwd = 1, col = 'blue', lty = 2)
+```
+Creating the second plot requires a little more work. We start by selecting the degree for the polynomial on `age`. To do that we will use `anova()`:
+```{r}
+fit.1 = lm(wage ~ age, data = Wage)
+fit.2 = lm(wage ~ poly(age, 2), data = Wage)
+fit.3 = lm(wage ~ poly(age, 3), data = Wage)
+fit.4 = lm(wage ~ poly(age, 4), data = Wage)
+fit.5 = lm(wage ~ poly(age, 5), data = Wage)
+anova(fit.1, fit.2, fit.3, fit.4, fit.5)
+```
+The output of the ANOVA analysis shows that the p-value comparing `fit.1` and `fit.2` is essentially 0, which means that considering both models are equivalent ($H_0$), the probability of obtaining the performance difference between them that ANOVA found is almost 0, so `fit.2` is better than `fit.1`. The same happens for `fit.3` and arguibly for `fit.4`.
+
+We will use a 4-degree polynomial to fit the data to a *qualitative* model with `glm()`, in which the target is the probability of `wage>250`, so we need `family=binomial`:
+```{r}
+poly.4.fit = glm(I(wage > 250) ~ poly(age, 4), data = Wage, family = binomial)
+```
+Now we make predictions for the age grid:
+```{r}
+poly.4.pred = predict(poly.4.fit, newdata = list(age = age.grid), se.fit = TRUE)
+```
+The default prediction type is `link`, which for a default `binomial` model are *log-odds*, probabilities on *logit* scale:
+
+$$
+log \left ( \frac {p(Y=1 \mid X)} {1 - p(Y=1 \mid X)}  \right ) = X \beta
+$$
+Using `type="response"`, which gives the actual predicted probabilities, seems the correct choice here, but the confidence intervals we obtained this way would have negative values.
+
+We need to convert the *logit* probabilities to actual probabilities:
+
+$$
+p(Y=1 \mid X) = \frac {\exp{(X \beta)}} {1 + \exp{(X \beta)}}
+$$
+```{r}
+pfit = exp(poly.4.pred$fit) / (1 + exp(poly.4.pred$fit))
+```
+And for the confidence interval:
+```{r}
+se.bands.logit = cbind(poly.4.pred$fit - 2 * poly.4.pred$se.fit,
+                       poly.4.pred$fit + 2 * poly.4.pred$se.fit)
+se.bands = exp(se.bands.logit) / (1 + exp(se.bands.logit))
+```
+We can now create the second plot:
+```{r, fig.dim=c(4, 4),  fig.align='center'}
+plot(age, I(wage > 250), xlim = agelims, type='n', ylim = c(0, .2))
+points(jitter(age), I(wage > 250)/5, cex = .5, pch = '|', col = 'darkgrey')
+lines(age.grid, pfit, lwd = 1, col = 'blue')
+matlines(age.grid, se.bands, lwd = 1, lty = 2, col = 'blue')
+```
+
+## Step Functions
