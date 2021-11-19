@@ -10,15 +10,14 @@ knitr::opts_chunk$set(echo = TRUE)
 
 We will be using the `Wage` dataset
 ```{r}
-pacman::p_load(ISLR)
+pacman::p_load(ISLR, splines)
 attach(Wage)
 ```
 
-# 1. Polynomial Regression and Step Functions
+# 1. Polynomial Regression
 
-## Polynomial Regression
+## Fitting the model
 
-### Fitting the model
 Our goal is to produce two plots, one showing `wage` vs `age` and other showing `wage>250` vs `age`.
 
 We start by fitting a linear model with powers of `age`:
@@ -27,7 +26,7 @@ poly.fit = lm(wage ~ poly(age, 4), data = Wage)
 summary(poly.fit)
 ```
 
-### Making predictions
+## Making predictions
 
 We create a grid for `age` in which we will make predictions:
 ```{r}
@@ -90,14 +89,15 @@ se.bands.logit = cbind(poly.4.pred$fit - 2 * poly.4.pred$se.fit,
 se.bands = exp(se.bands.logit) / (1 + exp(se.bands.logit))
 ```
 We can now create the second plot:
-```{r, fig.dim=c(4, 4),  fig.align='center'}
+```{r, fig.dim=c(6, 4),  fig.align='center'}
 plot(age, I(wage > 250), xlim = agelims, type='n', ylim = c(0, .2))
 points(jitter(age), I(wage > 250)/5, cex = .5, pch = '|', col = 'darkgrey')
 lines(age.grid, pfit, lwd = 1, col = 'blue')
 matlines(age.grid, se.bands, lwd = 1, lty = 2, col = 'blue')
+grid()
 ```
 
-## Step Functions
+# 2. Step Functions
 
 The `cut()` function divides the range of the data into intervals and assigns each data point to one of those intervals, returning an ordered *categorical* variable:
 ```{r}
@@ -115,5 +115,80 @@ step.fit = lm(wage ~ cut(age, 4), data=Wage)
 coef(summary(step.fit))
 ```
 
+
+# 3. Splines
+
+## B-Splines
+
+The `bs()` method, included in the `splines` library, creates an entire matrix of basis functions for splines with the given set of knots. In this case we will specify fixed knots for 3 values of `age`: 25, 40 and 60:
+```{r}
+bs(age, knots=c(25, 40, 60))[1:6,]
+```
+
+### Fitting the model
+
+A linear model is fitted using these basis expansions as predictors:
+```{r}
+spline.fit = lm(wage ~ bs(age, knots = c(25, 40, 60)), data = Wage)
+coef(summary(spline.fit))
+```
+Degrees of freedom can be specified instead of knots, using `df`. This generates a spline with wknots at uniform quantiles of the data.
+
+### Making predictions
+
+```{r}
+spline.pred = predict(spline.fit, newdata = list(age = age.grid), se.fit = TRUE)
+```
+Let's plot the results:
+```{r, fig.dim=c(6, 4),  fig.align='center'}
+lwd = 1.0
+plot(age, wage, col='darkgray', cex=.5)
+lines(age.grid, spline.pred$fit, lwd=lwd, col='blue')
+lines(age.grid, spline.pred$fit - 2*spline.pred$se.fit,
+      lty = 'dashed', col = 'blue')
+lines(age.grid, spline.pred$fit + 2*spline.pred$se.fit,
+      lty = 'dashed', col = 'blue')
+grid()
+```
+
+## Natural Splines
+
+To fit a *natural spline* the `ns()` function is used:
+```{r}
+nat.fit = lm(wage ~ ns(age, knots = c(25, 40, 60)), data = Wage)
+nat.pred = predict(nat.fit, newdata = list(age = age.grid), se.fit = TRUE)
+```
+
+## Smoothing Splines
+
+The `smooth.spline()` method is used. The syntax is different than before.
+
+The number of degrees of freedom can be specified using `df`, or the built-in *LOOCV* method can be used to select the best value for `df`:
+```{r}
+smooth.fit = smooth.spline(age, wage, cv=TRUE)
+```
+There's no need to make predictions when using a smoothing spline, as they are already computed in the `y` component of the fitted spline.
+
+## Comparing the results
+
+Let's plot all the splines together:
+
+```{r, fig.dim=c(6, 4),  fig.align='center'}
+lwd = 1.0
+plot(age, wage, col='darkgray', cex=.5, ylim = c(40, 140))
+# B-Spline
+lines(age.grid, spline.pred$fit, lwd=lwd, col='blue')
+# Natural Spline
+lines(age.grid, nat.pred$fit, col='red', lwd=lwd)
+# Smoothing Spline
+lines(smooth.fit, col='darkgreen', lwd=lwd)
+
+legend('bottomright',
+       legend = c('B-spline', 'Natural Spline', 'Smoothing Spline'),
+       col = c('blue', 'red', 'darkgreen'),
+       lty=1, cex=.7)
+```
+
+# 4. Local Regression
 
 
