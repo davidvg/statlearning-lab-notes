@@ -98,3 +98,22 @@ matlines(age.grid, se.bands, lwd = 1, lty = 2, col = 'blue')
 ```
 
 ## Step Functions
+
+The `cut()` function divides the range of the data into intervals and assigns each data point to one of those intervals, returning an ordered *categorical* variable:
+```{r}
+cut(age, 4)[1:5]
+```
+Labels can be passed to `cut()` to name the different levels or intervals.
+
+To get the total count of observations for each interval `table()` is used:
+```{r}
+table(cut(age, 4))
+```
+We can fit a linear model using these levels that creates *dummy* variables:
+```{r}
+step.fit = lm(wage ~ cut(age, 4), data=Wage)
+coef(summary(step.fit))
+```
+
+
+
