@@ -30,7 +30,7 @@ attach(Carseats)
 First we split the data in train and testing subsets:
 ```{r}
 set.seed(1)
-train = sample(1:nrow(Carseats), dim(Carseats)[1]/2)
+train = sample(1:nrow(Carseats), nrow(Carseats)/2)
 ```
 We will classify the data according to `Sales`; as it's a continuous variable, we'll encode it as a binary variable, with `ifelse()`, using the mean as an approximate threshold. The resulting array must be converted to a categorical variable using `factor()`:
 ```{r}
@@ -95,7 +95,14 @@ cv.carseats
 
 The 8-node tree has the lowest error rate, so we will use it as the final tree. 
 
-We can plot the error rate as a function of both `k` and `size`:
+Plotting the cross-validation tree shows the relations between `size`, `k` and `dev`:
+```{r, fig.dim=c(6, 4),  fig.align='center'}
+plot(cv.carseats)
+grid()
+```
+
+
+We can also plot the error rate as a function of both `k` and `size`:
 ```{r, fig.dim=c(8, 4),  fig.align='center'}
 par(mfrow=c(1, 2))
 plot(cv.carseats$size, cv.carseats$dev, type='b'); grid()
@@ -114,7 +121,7 @@ plot(prune.carseats)
 text(prune.carseats, pretty = 0, cex = .5)
 ```
 
-## Making predictions using the pruned tree
+### Making predictions using the pruned tree
 
 ```{r}
 tree.pred = predict(prune.carseats, newdata = Carseats[-train,], type='class')
@@ -125,3 +132,70 @@ Now the tree correctly labels the 70% of the testing data.
 
 
 # 2. Fitting Regression Trees
+
+The process is the same than for classification trees:
+
+1. Fit the tree to the training data.
+1. Find the optimal tree complexity using cross-validation.
+1. Make predictions on the testing subset. 
+
+The `Boston` dataset will be used.
+```{r}
+pacman::p_load(MASS)
+attach(Boston)
+```
+Training and test subsets are created:
+```{r}
+set.seed(1)
+train = sample(1:nrow(Boston), nrow(Boston)/2)
+```
+
+## Fitting the model
+As the target variable is continuous, a *regression tree* is fitted:
+```{r}
+tree.boston = tree(medv ~ ., data = Boston, subset = train)
+summary(tree.boston)
+```
+`summary()` reports that only 3 variables have been used to fit the tree: `lstat`, `crim` and `age`.
+```{r, fig.dim=c(6, 4),  fig.align='center'}
+plot(tree.boston)
+text(tree.boston, pretty = 0, cex = .6)
+```
+
+## Pruning the tree with Cross-Validation
+
+### Finding the optimal level of complexity
+In this example deviance (the default) will be used to select the best model, as the `prune.misclass()` function only applies to classification trees:
+```{r, fig.dim=c(6, 4),  fig.align='center'}
+cv.boston = cv.tree(tree.boston)
+plot(cv.boston)
+```
+
+```{r, fig.dim=c(8, 4),  fig.align='center'}
+par(mfrow=c(1, 2))
+plot(cv.boston$size, cv.boston$dev, type='b'); grid()
+plot(cv.boston$k, cv.boston$dev, type='b'); grid()
+```
+In this case the most complex tree has the lowest deviance.
+
+### Pruning the tree
+We can anyway prune the tree to get a simpler one:
+```{r, fig.dim=c(6, 4),  fig.align='center'}
+prune.boston = prune.tree(tree.boston, best = 5)
+plot(prune.boston)
+text(prune.boston, pretty = 0, cex=.5)
+```
+
+### Making predictions
+The complete tree is used, as it's the best model:
+```{r}
+pred.boston = predict(tree.boston, newdata = Boston[-train,])
+mean((pred.boston - medv[-train])^2)
+```
+The mean squared error is aproximatelly 35.3, and its square rooot is 5.9, meaning that the model leads to test predictions that are within around $\$6000$ of the true median home value for the suburb, as can be seen in the following plot:
+```{r, fig.dim=c(6, 4),  fig.align='center'}
+plot(pred.boston, Boston$medv[-train],
+     xlab = 'Prediction (k$)', ylab = 'Real Value (k$)')
+abline(0, 1, lty = 2)
+grid()
+```
