@@ -1,0 +1,127 @@
+---
+title: "Lab 8 - Decission Trees"
+subtitle: "An Introduction to Statistical Learning"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+pacman::p_load(tree, ISLR)
+```
+
+# 1. Fitting Classification Trees
+
+The process has the following steps:
+
+1. Fit the tree to the training data.
+1. Find the optimal tree complexity using cross-validation.
+1. Make predictions on the testing subset. 
+
+The `Carseats` dataset will be used.
+
+Classification and Regression Trees are fitted using the `tree` library.
+```{r}
+summary(Carseats)
+attach(Carseats)
+```
+First we split the data in train and testing subsets:
+```{r}
+set.seed(1)
+train = sample(1:nrow(Carseats), dim(Carseats)[1]/2)
+```
+We will classify the data according to `Sales`; as it's a continuous variable, we'll encode it as a binary variable, with `ifelse()`, using the mean as an approximate threshold. The resulting array must be converted to a categorical variable using `factor()`:
+```{r}
+High = ifelse(Sales > 8, 'Yes', 'No')
+High = factor(High)
+```
+We merge the new variable `High` in the dataset:
+```{r}
+Carseats$High = High
+```
+
+## Fitting the model
+We fit the decission tree using all the variables but `Sales`:
+```{r}
+tree.carseats = tree(High~.-Sales, data = Carseats, subset = train)
+summary(tree.carseats)
+```
+The *residual mean deviance* is the deviance divided by $n - \vert {T_0} \vert$, being $n$ the number of observations and $T_0$ the number of terminal nodes (reported by `summary()`). A small deviance indicates that the tree provides a god fit to the training data.
+
+`summary()` also includes the *misclassification error rate*, which for *classification trees* is given by:
+$$
+-2 \sum_m \sum_k n_{mk} \log{\hat p_{mk}}
+$$
+where $n_{mk}$ is the number of observations in the $m$th terminal node that belong to the $k$th class.
+
+`tree()` selects the relevant variables and exclude the rest from the model (in this case, `Population`, `Education` and `Urban` have been excluded)
+
+## Plotting the tree
+```{r, fig.dim=c(8, 6),  fig.align='center'}
+plot(tree.carseats)
+text(tree.carseats, pretty = 0, cex = .5)
+```
+
+`ShelveLoc` appears to be an important indicator for `Sales`, because the first branch differenciates `Good` locations from `Medium` and `Bad` locations.
+
+## Making predictions
+
+For classification trees, `type="class"` tells `predict()` to return the *actual class prediction*:
+```{r}
+tree.pred = predict(tree.carseats, newdata = Carseats[-train,], type = 'class')
+table(tree.pred, High[-train])
+```
+The tree makes correct classifications for the 64% of the testing data:
+```{r}
+mean(tree.pred == High[-train])
+```
+
+## Pruning the tree with Cross-Validation
+
+### Finding the optimal level of complexity
+
+The optimal level of complexity for a fitted tree can be determined using cross-validation, with the `cv.tree()` function. The default metric used to guide cross-validation is the deviance, but we can specify that we want the missclassification error rate with `FUN=prune.misclass`:
+```{r}
+set.seed(42)
+cv.carseats = cv.tree(tree.carseats, FUN = prune.misclass)
+```
+The result includes the following fields:
+```{r}
+cv.carseats
+```
+`size` is the number of terminal nodes of each tree considered. `dev` is actually the cross-validation error rate, as indicated with `FUN`. `k` is the cost-complexity parameter used, which corresponds to $\alpha$ in equation $8.4$.
+
+The 8-node tree has the lowest error rate, so we will use it as the final tree. 
+
+We can plot the error rate as a function of both `k` and `size`:
+```{r, fig.dim=c(8, 4),  fig.align='center'}
+par(mfrow=c(1, 2))
+plot(cv.carseats$size, cv.carseats$dev, type='b'); grid()
+plot(cv.carseats$k, cv.carseats$dev, type='b'); grid()
+```
+
+### Pruning the tree
+
+We apply the `prune.misclass()` function to prune the tree to obtain the 8-node tree:
+```{r}
+prune.carseats = prune.misclass(tree.carseats, best = 8)
+```
+
+```{r, fig.dim=c(6, 4),  fig.align='center'}
+plot(prune.carseats)
+text(prune.carseats, pretty = 0, cex = .5)
+```
+
+## Making predictions using the pruned tree
+
+```{r}
+tree.pred = predict(prune.carseats, newdata = Carseats[-train,], type='class')
+table(tree.pred, High[-train])
+mean(tree.pred == High[-train])
+```
+Now the tree correctly labels the 70% of the testing data.
+
+
+# 2. Fitting Regression Trees
